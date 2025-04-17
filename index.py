@@ -9,10 +9,48 @@ from PyQt5.QtWidgets import (
     QGraphicsTextItem,
     QToolBar,
     QAction,
-    QGraphicsItemGroup,
+    QGraphicsItem,
 )
 from PyQt5.QtGui import QPen, QBrush, QFont
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QPointF
+
+
+class ShapeWithLabel(QGraphicsItem):
+    def __init__(self, shape_type="rectangle", parent=None):
+        super().__init__(parent)
+
+        # Create shape
+        if shape_type == "rectangle":
+            self.shape = QGraphicsRectItem(0, 0, 100, 50, self)
+            self.shape.setBrush(QBrush(Qt.yellow))
+            self.label_text = "Rectangle"
+        elif shape_type == "ellipse":
+            self.shape = QGraphicsEllipseItem(0, 0, 100, 100, self)
+            self.shape.setBrush(QBrush(Qt.green))
+            self.label_text = "Ellipse"
+
+        self.shape.setPen(QPen(Qt.black))
+
+        # Create label
+        self.label = QGraphicsTextItem(self.label_text, self)
+        self.label.setFont(QFont("Arial", 12))
+        self.label.setPos(10, 10)
+        self.label.setTextInteractionFlags(Qt.TextInteractionFlag.TextEditorInteraction)
+
+        # Enable movement and selection for the whole item
+        self.setFlags(
+            QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
+            | QGraphicsItem.GraphicsItemFlag.ItemIsMovable
+        )
+
+    def boundingRect(self):
+        # Union of shape and label bounding rects
+        return self.shape.boundingRect().united(
+            self.label.boundingRect().translated(self.label.pos())
+        )
+
+    def paint(self, painter, option, widget):
+        pass  # Everything is drawn by child items
 
 
 class DiagramScene(QGraphicsScene):
@@ -26,37 +64,9 @@ class DiagramScene(QGraphicsScene):
     def mousePressEvent(self, event):
         pos = event.scenePos()
         if self.mode in ["rectangle", "ellipse"]:
-            # Create shape
-            if self.mode == "rectangle":
-                shape = QGraphicsRectItem(0, 0, 100, 50)
-                shape.setBrush(QBrush(Qt.yellow))
-                label_text = "Rectangle"
-            else:
-                shape = QGraphicsEllipseItem(0, 0, 100, 100)
-                shape.setBrush(QBrush(Qt.green))
-                label_text = "Ellipse"
-
-            shape.setPen(QPen(Qt.black))
-
-            # Create label
-            label = QGraphicsTextItem(label_text)
-            label.setFont(QFont("Arial", 12))
-            label.setTextInteractionFlags(Qt.TextInteractionFlag.TextEditorInteraction)
-            label.setPos(10, 10)  # relative to shape
-
-            # Group shape and label
-            group = QGraphicsItemGroup()
-            group.addToGroup(shape)
-            group.addToGroup(label)
-            group.setPos(pos)
-
-            # Make group selectable & movable
-            group.setFlags(
-                QGraphicsItemGroup.GraphicsItemFlag.ItemIsSelectable
-                | QGraphicsItemGroup.GraphicsItemFlag.ItemIsMovable
-            )
-
-            self.addItem(group)
+            item = ShapeWithLabel(shape_type=self.mode)
+            item.setPos(pos)
+            self.addItem(item)
         else:
             super().mousePressEvent(event)
 
@@ -64,7 +74,7 @@ class DiagramScene(QGraphicsScene):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Drawing Tool - Step 4: Labels")
+        self.setWindowTitle("Drawing Tool - Editable Labels")
         self.setGeometry(100, 100, 800, 600)
 
         self.scene = DiagramScene()
