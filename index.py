@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import (
     QAction,
 )
 from PyQt5.QtGui import QPen, QBrush
-from PyQt5.QtCore import Qt, QPointF
+from PyQt5.QtCore import Qt
 
 
 class DiagramScene(QGraphicsScene):
@@ -28,21 +28,30 @@ class DiagramScene(QGraphicsScene):
             rect.setPos(pos)
             rect.setPen(QPen(Qt.black))
             rect.setBrush(QBrush(Qt.yellow))
+            rect.setFlags(
+                QGraphicsRectItem.GraphicsItemFlag.ItemIsSelectable
+                | QGraphicsRectItem.GraphicsItemFlag.ItemIsMovable
+            )
             self.addItem(rect)
         elif self.mode == "ellipse":
             ellipse = QGraphicsEllipseItem(0, 0, 100, 100)
             ellipse.setPos(pos)
             ellipse.setPen(QPen(Qt.black))
             ellipse.setBrush(QBrush(Qt.green))
+            ellipse.setFlags(
+                QGraphicsEllipseItem.GraphicsItemFlag.ItemIsSelectable
+                | QGraphicsEllipseItem.GraphicsItemFlag.ItemIsMovable
+            )
             self.addItem(ellipse)
         else:
+            # Let QGraphicsScene handle item selection/movement
             super().mousePressEvent(event)
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Drawing Tool - Step 2")
+        self.setWindowTitle("Drawing Tool - Step 3")
         self.setGeometry(100, 100, 800, 600)
 
         # Create scene and view
