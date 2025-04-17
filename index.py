@@ -103,12 +103,36 @@ class MainWindow(QMainWindow):
         self.setGeometry(100, 100, 800, 600)
 
         self.scene = DiagramScene()
-        self.scene.setSceneRect(0, 0, 800, 600)
-
         self.view = QGraphicsView(self.scene)
         self.setCentralWidget(self.view)
 
+        self.view.setRenderHint(QPainter.RenderHint.Antialiasing)
+        self.view.setViewportUpdateMode(
+            QGraphicsView.ViewportUpdateMode.FullViewportUpdate
+        )
+
+        # Enable mouse tracking for hover events
+        self.view.setMouseTracking(True)
+        self.scene.setSceneRect(0, 0, 2000, 2000)
+
+        # Zoom factor
+        self.zoom_level = 1.0
+        self.view.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
+        self.view.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
+
         self._createToolbar()
+
+    def wheelEvent(self, event):
+        zoom_in_factor = 1.15
+        zoom_out_factor = 1 / zoom_in_factor
+
+        if event.angleDelta().y() > 0:
+            zoom_factor = zoom_in_factor
+        else:
+            zoom_factor = zoom_out_factor
+
+        self.zoom_level *= zoom_factor
+        self.view.scale(zoom_factor, zoom_factor)
 
     def _createToolbar(self):
         toolbar = QToolBar("Toolbar")
