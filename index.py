@@ -1,4 +1,5 @@
 import sys
+import math
 from PyQt5.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -11,18 +12,18 @@ from PyQt5.QtWidgets import (
     QAction,
     QGraphicsItem,
 )
-from PyQt5.QtGui import QPen, QBrush, QFont, QColor, QPainter
-from PyQt5.QtCore import Qt, QPointF, QRectF
+from PyQt5.QtGui import QPen, QBrush, QFont, QColor, QPainter, QPolygonF
+from PyQt5.QtCore import Qt, QPointF, QRectF, QLineF
 
 
-GRID_SIZE = 20  # Grid spacing in pixels
+GRID_SIZE = 20
 
 
 class ShapeWithLabel(QGraphicsItem):
     def __init__(self, shape_type="rectangle", parent=None):
         super().__init__(parent)
+        self.connectors = []  # Track attached connectors
 
-        # Create shape
         if shape_type == "rectangle":
             self.shape = QGraphicsRectItem(0, 0, 100, 50, self)
             self.shape.setBrush(QBrush(Qt.yellow))
@@ -34,20 +35,15 @@ class ShapeWithLabel(QGraphicsItem):
 
         self.shape.setPen(QPen(Qt.black))
 
-        # Create label
         self.label = QGraphicsTextItem(self.label_text, self)
         self.label.setFont(QFont("Arial", 12))
         self.label.setPos(10, 10)
         self.label.setTextInteractionFlags(Qt.TextInteractionFlag.TextEditorInteraction)
 
-        # Enable movement and selection for the whole item
         self.setFlags(
             QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
             | QGraphicsItem.GraphicsItemFlag.ItemIsMovable
         )
-
-        # Keep track of the label's current editing status
-        self.is_editing = False
 
     def boundingRect(self):
         return self.shape.boundingRect().united(
@@ -55,51 +51,89 @@ class ShapeWithLabel(QGraphicsItem):
         )
 
     def paint(self, painter, option, widget):
-        # Draw the shape
         self.shape.paint(painter, option, widget)
-
-        # If the item is selected, add a selection border
         if self.isSelected():
             pen = QPen(QColor(0, 0, 255), 3, Qt.PenStyle.DashLine)
             painter.setPen(pen)
             painter.drawRect(self.boundingRect())
 
-    def focusInEvent(self, event):
-        """Focus event to start editing the label when selected."""
-        if (
-            self.label.textInteractionFlags()
-            != Qt.TextInteractionFlag.TextEditorInteraction
-        ):
-            self.label.setTextInteractionFlags(
-                Qt.TextInteractionFlag.TextEditorInteraction
-            )
-        super().focusInEvent(event)
-
-    def focusOutEvent(self, event):
-        """Update label when focus is lost."""
-        if self.label.toPlainText() != self.label_text:
-            self.label_text = self.label.toPlainText()
-        super().focusOutEvent(event)
-
     def itemChange(self, change, value):
-        """Ensures items snap to grid during movement."""
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
-            new_pos = value
-            snapped_pos = self.scene().snapToGrid(new_pos)
-            return snapped_pos
+            for connector in self.connectors:
+                connector.updatePosition()
         return super().itemChange(change, value)
+
+    def removeConnector(self, connector):
+        if connector in self.connectors:
+            self.connectors.remove(connector)
+
+
+class ConnectorLine(QGraphicsItem):
+    def __init__(self, start_item, end_item, parent=None):
+        super().__init__(parent)
+        self.start_item = start_item
+        self.end_item = end_item
+        self.pen = QPen(Qt.red, 2, Qt.PenStyle.SolidLine)
+
+        self.setZValue(-1)  # Keep behind shapes
+        self.setFlags(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable)
+
+        # Attach to both shapes
+        self.start_item.connectors.append(self)
+        self.end_item.connectors.append(self)
+
+    def boundingRect(self):
+        p1 = self.start_item.mapToScene(self.start_item.boundingRect().center())
+        p2 = self.end_item.mapToScene(self.end_item.boundingRect().center())
+        return QRectF(p1, p2).normalized().adjusted(-10, -10, 10, 10)
+
+    def paint(self, painter, option, widget):
+        start = self.start_item.mapToScene(self.start_item.boundingRect().center())
+        end = self.end_item.mapToScene(self.end_item.boundingRect().center())
+
+        line = QLineF(start, end)
+        painter.setPen(self.pen)
+        painter.drawLine(line)
+
+        # Draw arrowhead
+        angle = line.angle()
+        arrow_size = 10
+        angle_rad = (angle - 180) * 3.14159 / 180.0
+
+        p1 = end
+        p2 = end + QPointF(
+            arrow_size * -0.5 * math.cos(angle_rad - 0.5),
+            arrow_size * -0.5 * math.sin(angle_rad - 0.5),
+        )
+        p3 = end + QPointF(
+            arrow_size * -0.5 * math.cos(angle_rad + 0.5),
+            arrow_size * -0.5 * math.sin(angle_rad + 0.5),
+        )
+
+        arrow = QPolygonF([p1, p2, p3])
+        painter.setBrush(Qt.red)
+        painter.drawPolygon(arrow)
+
+    def updatePosition(self):
+        self.prepareGeometryChange()
+        self.update()
+
+    def removeSelf(self):
+        self.scene().removeItem(self)
+        self.start_item.removeConnector(self)
+        self.end_item.removeConnector(self)
 
 
 class DiagramScene(QGraphicsScene):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.mode = "select"
+        self.selected_shapes = []
 
     def setMode(self, mode):
         self.mode = mode
 
     def drawBackground(self, painter: QPainter, rect: QRectF):
-        # Draw grid lines
         left = int(rect.left()) - (int(rect.left()) % GRID_SIZE)
         top = int(rect.top()) - (int(rect.top()) % GRID_SIZE)
 
@@ -127,19 +161,36 @@ class DiagramScene(QGraphicsScene):
             item = ShapeWithLabel(shape_type=self.mode)
             item.setPos(snapped_pos)
             self.addItem(item)
+
+        elif self.mode == "connect":
+            for item in self.items(event.scenePos()):
+                if isinstance(item, ShapeWithLabel):
+                    if item not in self.selected_shapes:
+                        self.selected_shapes.append(item)
+                    if len(self.selected_shapes) == 2:
+                        start_item, end_item = self.selected_shapes
+                        connector = ConnectorLine(start_item, end_item)
+                        self.addItem(connector)
+                        self.selected_shapes.clear()
+                    break
         else:
             super().mousePressEvent(event)
 
     def deleteSelectedItem(self):
-        """Delete selected items in the scene."""
+        """Delete selected shapes and connectors"""
         for item in self.selectedItems():
-            self.removeItem(item)
+            if isinstance(item, ConnectorLine):
+                item.removeSelf()
+            elif isinstance(item, ShapeWithLabel):
+                for connector in list(item.connectors):  # Copy list
+                    connector.removeSelf()
+                self.removeItem(item)
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Drawing Tool - Grid + Snap")
+        self.setWindowTitle("Drawing Tool - Grid + Snap + Connectors")
         self.setGeometry(100, 100, 800, 600)
 
         self.scene = DiagramScene()
@@ -153,11 +204,9 @@ class MainWindow(QMainWindow):
             QGraphicsView.ViewportUpdateMode.FullViewportUpdate
         )
 
-        # Enable mouse tracking for hover events
         self.view.setMouseTracking(True)
         self.scene.setSceneRect(0, 0, 2000, 2000)
 
-        # Zoom factor
         self.zoom_level = 1.0
         self.view.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.view.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
@@ -177,7 +226,6 @@ class MainWindow(QMainWindow):
         self.view.scale(zoom_factor, zoom_factor)
 
     def keyPressEvent(self, event):
-        """Handle key press events (for deleting selected shapes)."""
         if event.key() == Qt.Key_Delete:
             self.scene.deleteSelectedItem()
 
@@ -192,6 +240,10 @@ class MainWindow(QMainWindow):
         ellipse_action = QAction("Ellipse", self)
         ellipse_action.triggered.connect(lambda: self.scene.setMode("ellipse"))
         toolbar.addAction(ellipse_action)
+
+        connect_action = QAction("Connect", self)
+        connect_action.triggered.connect(lambda: self.scene.setMode("connect"))
+        toolbar.addAction(connect_action)
 
         select_action = QAction("Select", self)
         select_action.triggered.connect(lambda: self.scene.setMode("select"))
