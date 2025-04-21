@@ -55,7 +55,14 @@ class ShapeWithLabel(QGraphicsItem):
         )
 
     def paint(self, painter, option, widget):
-        pass  # Children handle drawing
+        # Draw the shape
+        self.shape.paint(painter, option, widget)
+
+        # If the item is selected, add a selection border
+        if self.isSelected():
+            pen = QPen(QColor(0, 0, 255), 3, Qt.PenStyle.DashLine)
+            painter.setPen(pen)
+            painter.drawRect(self.boundingRect())
 
     def focusInEvent(self, event):
         """Focus event to start editing the label when selected."""
