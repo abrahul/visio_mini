@@ -8,7 +8,7 @@
 
 - 🖌️ User-friendly interface for drawing
 - ⚡ Lightweight and easy to set up
-- 🎨 Designed for creativity and minimalism
+
 
 ---
 
