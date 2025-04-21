@@ -24,3 +24,12 @@ To install PyQt5, run:
 ```bash
 pip install PyQt5
 ```
+
+## 📦 Execution
+
+Clone the repository
+```bash
+cd visio_mini
+
+In the Terminal, run the command python index.py
+```
