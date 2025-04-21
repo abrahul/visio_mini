@@ -46,6 +46,9 @@ class ShapeWithLabel(QGraphicsItem):
             | QGraphicsItem.GraphicsItemFlag.ItemIsMovable
         )
 
+        # Keep track of the label's current editing status
+        self.is_editing = False
+
     def boundingRect(self):
         return self.shape.boundingRect().united(
             self.label.boundingRect().translated(self.label.pos())
@@ -53,6 +56,23 @@ class ShapeWithLabel(QGraphicsItem):
 
     def paint(self, painter, option, widget):
         pass  # Children handle drawing
+
+    def focusInEvent(self, event):
+        """Focus event to start editing the label when selected."""
+        if (
+            self.label.textInteractionFlags()
+            != Qt.TextInteractionFlag.TextEditorInteraction
+        ):
+            self.label.setTextInteractionFlags(
+                Qt.TextInteractionFlag.TextEditorInteraction
+            )
+        super().focusInEvent(event)
+
+    def focusOutEvent(self, event):
+        """Update label when focus is lost."""
+        if self.label.toPlainText() != self.label_text:
+            self.label_text = self.label.toPlainText()
+        super().focusOutEvent(event)
 
 
 class DiagramScene(QGraphicsScene):
@@ -103,6 +123,8 @@ class MainWindow(QMainWindow):
         self.setGeometry(100, 100, 800, 600)
 
         self.scene = DiagramScene()
+        self.scene.setSceneRect(0, 0, 800, 600)
+
         self.view = QGraphicsView(self.scene)
         self.setCentralWidget(self.view)
 
