@@ -74,6 +74,14 @@ class ShapeWithLabel(QGraphicsItem):
             self.label_text = self.label.toPlainText()
         super().focusOutEvent(event)
 
+    def itemChange(self, change, value):
+        """Ensures items snap to grid during movement."""
+        if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
+            new_pos = value
+            snapped_pos = self.scene().snapToGrid(new_pos)
+            return snapped_pos
+        return super().itemChange(change, value)
+
 
 class DiagramScene(QGraphicsScene):
     def __init__(self, parent=None):
@@ -114,6 +122,11 @@ class DiagramScene(QGraphicsScene):
             self.addItem(item)
         else:
             super().mousePressEvent(event)
+
+    def deleteSelectedItem(self):
+        """Delete selected items in the scene."""
+        for item in self.selectedItems():
+            self.removeItem(item)
 
 
 class MainWindow(QMainWindow):
@@ -156,6 +169,11 @@ class MainWindow(QMainWindow):
         self.zoom_level *= zoom_factor
         self.view.scale(zoom_factor, zoom_factor)
 
+    def keyPressEvent(self, event):
+        """Handle key press events (for deleting selected shapes)."""
+        if event.key() == Qt.Key_Delete:
+            self.scene.deleteSelectedItem()
+
     def _createToolbar(self):
         toolbar = QToolBar("Toolbar")
         self.addToolBar(toolbar)
@@ -171,6 +189,10 @@ class MainWindow(QMainWindow):
         select_action = QAction("Select", self)
         select_action.triggered.connect(lambda: self.scene.setMode("select"))
         toolbar.addAction(select_action)
+
+        delete_action = QAction("Delete", self)
+        delete_action.triggered.connect(lambda: self.scene.deleteSelectedItem())
+        toolbar.addAction(delete_action)
 
 
 if __name__ == "__main__":
