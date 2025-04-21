@@ -1,5 +1,6 @@
 import sys
 import math
+
 from PyQt5.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -206,6 +207,7 @@ class MainWindow(QMainWindow):
 
         self.view.setMouseTracking(True)
         self.scene.setSceneRect(0, 0, 2000, 2000)
+        self.statusBar().showMessage("Mode: Select")
 
         self.zoom_level = 1.0
         self.view.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
@@ -229,24 +231,31 @@ class MainWindow(QMainWindow):
         if event.key() == Qt.Key_Delete:
             self.scene.deleteSelectedItem()
 
+    def updateStatusBar(self, text):
+        self.statusBar().showMessage(f"Mode: {text}")
+
+    def setModeAndUpdate(self, mode):
+        self.scene.setMode(mode)
+        self.updateStatusBar(mode.capitalize())
+
     def _createToolbar(self):
         toolbar = QToolBar("Toolbar")
         self.addToolBar(toolbar)
 
         rect_action = QAction("Rectangle", self)
-        rect_action.triggered.connect(lambda: self.scene.setMode("rectangle"))
+        rect_action.triggered.connect(lambda: self.setModeAndUpdate("rectangle"))
         toolbar.addAction(rect_action)
 
         ellipse_action = QAction("Ellipse", self)
-        ellipse_action.triggered.connect(lambda: self.scene.setMode("ellipse"))
+        ellipse_action.triggered.connect(lambda: self.setModeAndUpdate("ellipse"))
         toolbar.addAction(ellipse_action)
 
         connect_action = QAction("Connect", self)
-        connect_action.triggered.connect(lambda: self.scene.setMode("connect"))
+        connect_action.triggered.connect(lambda: self.setModeAndUpdate("connect"))
         toolbar.addAction(connect_action)
 
         select_action = QAction("Select", self)
-        select_action.triggered.connect(lambda: self.scene.setMode("select"))
+        select_action.triggered.connect(lambda: self.setModeAndUpdate("select"))
         toolbar.addAction(select_action)
 
         delete_action = QAction("Delete", self)
