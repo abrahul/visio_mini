@@ -1,5 +1,6 @@
 import sys
 import math
+import uuid
 
 from PyQt5.QtWidgets import (
     QApplication,
@@ -16,14 +17,14 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QPen, QBrush, QFont, QColor, QPainter, QPolygonF
 from PyQt5.QtCore import Qt, QPointF, QRectF, QLineF
 
-
 GRID_SIZE = 20
 
 
 class ShapeWithLabel(QGraphicsItem):
-    def __init__(self, shape_type="rectangle", parent=None):
+    def __init__(self, shape_type="rectangle", parent=None, shape_id=None):
         super().__init__(parent)
-        self.connectors = []  # Track attached connectors
+        self.connectors = []
+        self.shape_id = shape_id or str(uuid.uuid4())
 
         if shape_type == "rectangle":
             self.shape = QGraphicsRectItem(0, 0, 100, 50, self)
@@ -76,10 +77,9 @@ class ConnectorLine(QGraphicsItem):
         self.end_item = end_item
         self.pen = QPen(Qt.red, 2, Qt.PenStyle.SolidLine)
 
-        self.setZValue(-1)  # Keep behind shapes
+        self.setZValue(-1)
         self.setFlags(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable)
 
-        # Attach to both shapes
         self.start_item.connectors.append(self)
         self.end_item.connectors.append(self)
 
@@ -96,10 +96,9 @@ class ConnectorLine(QGraphicsItem):
         painter.setPen(self.pen)
         painter.drawLine(line)
 
-        # Draw arrowhead
         angle = line.angle()
         arrow_size = 10
-        angle_rad = (angle - 180) * 3.14159 / 180.0
+        angle_rad = (angle - 180) * math.pi / 180.0
 
         p1 = end
         p2 = end + QPointF(
@@ -120,9 +119,12 @@ class ConnectorLine(QGraphicsItem):
         self.update()
 
     def removeSelf(self):
-        self.scene().removeItem(self)
-        self.start_item.removeConnector(self)
-        self.end_item.removeConnector(self)
+        if self.scene():
+            self.scene().removeItem(self)
+        if self.start_item:
+            self.start_item.removeConnector(self)
+        if self.end_item:
+            self.end_item.removeConnector(self)
 
 
 class DiagramScene(QGraphicsScene):
@@ -130,6 +132,8 @@ class DiagramScene(QGraphicsScene):
         super().__init__(parent)
         self.mode = "select"
         self.selected_shapes = []
+        self.undo_stack = []
+        self.redo_stack = []
 
     def setMode(self, mode):
         self.mode = mode
@@ -162,6 +166,8 @@ class DiagramScene(QGraphicsScene):
             item = ShapeWithLabel(shape_type=self.mode)
             item.setPos(snapped_pos)
             self.addItem(item)
+            self.undo_stack.append(("add", item))
+            self.redo_stack.clear()
 
         elif self.mode == "connect":
             for item in self.items(event.scenePos()):
@@ -172,20 +178,92 @@ class DiagramScene(QGraphicsScene):
                         start_item, end_item = self.selected_shapes
                         connector = ConnectorLine(start_item, end_item)
                         self.addItem(connector)
+                        self.undo_stack.append(
+                            ("connect", (start_item.shape_id, end_item.shape_id))
+                        )
+                        self.redo_stack.clear()
                         self.selected_shapes.clear()
                     break
         else:
             super().mousePressEvent(event)
 
     def deleteSelectedItem(self):
-        """Delete selected shapes and connectors"""
         for item in self.selectedItems():
             if isinstance(item, ConnectorLine):
                 item.removeSelf()
+                self.undo_stack.append(("delete_connector", item))
             elif isinstance(item, ShapeWithLabel):
-                for connector in list(item.connectors):  # Copy list
+                for connector in list(item.connectors):
                     connector.removeSelf()
                 self.removeItem(item)
+                self.undo_stack.append(("delete_shape", item))
+        self.redo_stack.clear()
+
+    def undo(self):
+        if not self.undo_stack:
+            return
+
+        action = self.undo_stack.pop()
+        self.redo_stack.append(action)
+
+        if action[0] == "add":
+            item = action[1]
+            self.removeItem(item)
+
+        elif action[0] == "connect":
+            start_id, end_id = action[1]
+            conn = self.findConnector(start_id, end_id)
+            if conn:
+                conn.removeSelf()
+
+        elif action[0] == "delete_shape":
+            self.addItem(action[1])
+
+        elif action[0] == "delete_connector":
+            self.addItem(action[1])
+
+    def redo(self):
+        if not self.redo_stack:
+            return
+
+        action = self.redo_stack.pop()
+        self.undo_stack.append(action)
+
+        if action[0] == "add":
+            self.addItem(action[1])
+
+        elif action[0] == "connect":
+            start_id, end_id = action[1]
+            start_item = self.findShapeById(start_id)
+            end_item = self.findShapeById(end_id)
+            if start_item and end_item:
+                connector = ConnectorLine(start_item, end_item)
+                self.addItem(connector)
+
+        elif action[0] == "delete_shape":
+            self.removeItem(action[1])
+
+        elif action[0] == "delete_connector":
+            action[1].removeSelf()
+
+    def findShapeById(self, shape_id):
+        for item in self.items():
+            if isinstance(item, ShapeWithLabel) and item.shape_id == shape_id:
+                return item
+        return None
+
+    def findConnector(self, start_id, end_id):
+        for item in self.items():
+            if isinstance(item, ConnectorLine):
+                if (
+                    item.start_item.shape_id == start_id
+                    and item.end_item.shape_id == end_id
+                ) or (
+                    item.start_item.shape_id == end_id
+                    and item.end_item.shape_id == start_id
+                ):
+                    return item
+        return None
 
 
 class MainWindow(QMainWindow):
@@ -230,6 +308,10 @@ class MainWindow(QMainWindow):
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Delete:
             self.scene.deleteSelectedItem()
+        elif event.key() == Qt.Key_Z and event.modifiers() & Qt.ControlModifier:
+            self.scene.undo()
+        elif event.key() == Qt.Key_Y and event.modifiers() & Qt.ControlModifier:
+            self.scene.redo()
 
     def updateStatusBar(self, text):
         self.statusBar().showMessage(f"Mode: {text}")
@@ -261,6 +343,14 @@ class MainWindow(QMainWindow):
         delete_action = QAction("Delete", self)
         delete_action.triggered.connect(lambda: self.scene.deleteSelectedItem())
         toolbar.addAction(delete_action)
+
+        undo_action = QAction("Undo", self)
+        undo_action.triggered.connect(self.scene.undo)
+        toolbar.addAction(undo_action)
+
+        redo_action = QAction("Redo", self)
+        redo_action.triggered.connect(self.scene.redo)
+        toolbar.addAction(redo_action)
 
 
 if __name__ == "__main__":
