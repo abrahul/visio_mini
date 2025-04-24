@@ -96,18 +96,23 @@ class ConnectorLine(QGraphicsItem):
         painter.setPen(self.pen)
         painter.drawLine(line)
 
-        angle = line.angle()
-        arrow_size = 10
-        angle_rad = (angle - 180) * math.pi / 180.0
+        # Arrowhead in the middle, with correct direction
+        mid = (start + end) / 2
+        angle_rad = math.atan2(end.y() - start.y(), end.x() - start.x())
 
-        p1 = end
-        p2 = end + QPointF(
-            arrow_size * -0.5 * math.cos(angle_rad - 0.5),
-            arrow_size * -0.5 * math.sin(angle_rad - 0.5),
+        arrow_size = 10
+        dx = math.cos(angle_rad)
+        dy = math.sin(angle_rad)
+
+        # Arrowhead triangle points
+        p1 = mid
+        p2 = mid - QPointF(
+            arrow_size * dx - arrow_size * 0.5 * dy,
+            arrow_size * dy + arrow_size * 0.5 * dx,
         )
-        p3 = end + QPointF(
-            arrow_size * -0.5 * math.cos(angle_rad + 0.5),
-            arrow_size * -0.5 * math.sin(angle_rad + 0.5),
+        p3 = mid - QPointF(
+            arrow_size * dx + arrow_size * 0.5 * dy,
+            arrow_size * dy - arrow_size * 0.5 * dx,
         )
 
         arrow = QPolygonF([p1, p2, p3])
@@ -125,6 +130,9 @@ class ConnectorLine(QGraphicsItem):
             self.start_item.removeConnector(self)
         if self.end_item:
             self.end_item.removeConnector(self)
+
+    def setArrowAt(self, position="middle"):
+        self.arrow_position = position
 
 
 class DiagramScene(QGraphicsScene):
